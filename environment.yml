@@ -1,0 +1,8 @@
+name: AgentsSystem
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - pandas
+  - conda-forge::openai-agents
+prefix: /opt/anaconda3/envs/AgentsSystem

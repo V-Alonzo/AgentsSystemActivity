@@ -1,0 +1,8 @@
+
+SEARCHES_NUMBER = 3
+WRITER_AGENT_MODEL = "gpt-4o-mini"
+RECIPIENT_NAME_COLUMN = "Nombre"
+RECIPIENT_EMAIL_COLUMN = "Correo"
+EMAIL_REGEX_PATTERN = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$]"
+EMAIL_SERVER = "smtp.gmail.com"
+EMAIL_SERVER_PORT = 587

@@ -1,3 +1,4 @@
 .env
 __pycache__/
 destinatarios.csv
+secret/*.pem

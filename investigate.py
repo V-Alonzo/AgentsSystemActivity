@@ -4,6 +4,7 @@ import smtplib
 import pandas as pd
 import gradio as gr
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from agents import Agent, WebSearchTool, Runner, trace
@@ -13,6 +14,14 @@ from settings import SEARCHES_NUMBER, WRITER_AGENT_MODEL, RECIPIENT_NAME_COLUMN,
 import re
 
 # Models
+
+load_dotenv()
+TEXT = TRANSLATIONS["es"]
+INVESTIGATION_TEXT = TEXT["Investigation"]
+RECIPIENT_PREVIEW_TEXT = TEXT["RecipientPreview"]
+EMAIL_REPORT_TEXT = TEXT["EmailReport"]
+ERROR_TEXT = TEXT["Errors"]
+EMAIL_TEXT = TEXT["Email"]
 
 class WebSearchElement(BaseModel):
     reason: str = Field(description=TRANSLATIONS["es"]["WebSearchElement"]["reason"])
@@ -37,7 +46,8 @@ search_agent = Agent(
 
 planner_agent = Agent(
     name = TRANSLATIONS["es"]["PlannerAgent"]["name"],
-    instructions = TRANSLATIONS["es"]["PlannerAgent"]["instructions"].format(SEARCHES_NUMBER=SEARCHES_NUMBER)
+    instructions = TRANSLATIONS["es"]["PlannerAgent"]["instructions"].format(SEARCHES_NUMBER=SEARCHES_NUMBER),
+    output_type=WebSearchPlan
 )
 
 writer_agent = Agent(
@@ -65,6 +75,98 @@ async def write_report(query: str, results: list[str]) -> InformationData:
     result = await Runner.run(writer_agent, research_input)
     return result.final_output
 
+async def perform_investigation(
+        query: str,
+        excel_filepath: str,
+        send: bool,
+        progress: gr.Progress = gr.Progress(track_tqdm=True)
+):
+    """
+    Main function that orchestates the whole pipeline and update de Gradio's UI.
+    Yield: (status_log, report_markdown, short_summary, email_log)
+    """
+
+    if not query.strip():
+        yield INVESTIGATION_TEXT["empty_query"], "", "", ""
+        return
+    
+    log = []
+
+    # Step 1: Plan searches
+    log.append(INVESTIGATION_TEXT["planning_searches"])
+
+    yield "\n".join(log), "", "", ""
+
+    with trace(INVESTIGATION_TEXT["trace_completed"]):
+        plan = await plan_searches(query)
+
+    concepts = [elem.query for elem in plan.searches]
+    log.append(INVESTIGATION_TEXT["planned_searches"].format(count=len(concepts)))
+
+    for t in concepts:
+        log.append(INVESTIGATION_TEXT["planned_search_item"].format(query=t))
+
+    yield "\n".join(log), "", "", ""
+
+    # Step 2: Perform parallel searches
+    log.append(INVESTIGATION_TEXT["performing_searches"])
+    yield "\n".join(log), "", "", ""
+
+    results = await perform_searches(plan)
+    log.append(INVESTIGATION_TEXT["completed_searches"].format(count=len(results)))
+
+    yield "\n".join(log), "", "", ""
+
+    # Step 3: Write report
+    log.append(INVESTIGATION_TEXT["writing_report"])
+    yield "\n".join(log), "", "", ""
+
+    report = await write_report(query, results)
+    log.append(INVESTIGATION_TEXT["report_completed"])
+    yield "\n".join(log), report.markdown_report, f" {report.brief_summary}", ""
+
+    # Step 4: send emails (optional)
+    status_emails = ""
+
+    if send:
+        log.append(INVESTIGATION_TEXT["sending_emails"])
+        yield "\n".join(log), report.markdown_report, f" {report.brief_summary}", INVESTIGATION_TEXT["sending_status"]
+
+        recipients = read_recipient(excel_filepath) if excel_filepath else []
+        status_emails = send_emails(recipients, query, report)
+
+        log.append(status_emails)
+
+        yield "\n".join(log), report.markdown_report, f" {report.brief_summary}", status_emails
+    
+    else:
+        yield "\n".join(log), report.markdown_report, f" {report.brief_summary}", INVESTIGATION_TEXT["email_skipped"]
+
+
+def get_path(file) -> str:
+    if file is None:
+        return None
+    
+    return file.name if hasattr(file, "name") else file
+
+
+# Load recipients
+def preview_recipients(file) -> str:
+    if not file:
+        return RECIPIENT_PREVIEW_TEXT["upload_prompt"]
+    
+    route = file.name if hasattr(file, "name") else file
+    receipients = read_recipient(route)
+
+    if not receipients:
+        return RECIPIENT_PREVIEW_TEXT["no_valid_recipients"]
+    
+    rows = [
+        RECIPIENT_PREVIEW_TEXT["row_with_name"].format(name=name, email=email)
+        if name else RECIPIENT_PREVIEW_TEXT["row_without_name"].format(email=email)
+        for name, email in receipients
+    ]
+    return RECIPIENT_PREVIEW_TEXT["valid_recipients_found"].format(count=len(receipients)) + "\n\n" + "\n\n".join(rows)
 
 def read_recipient(filepath : str) -> list[tuple[str, str]]:
     if not filepath or not os.path.exists(filepath):
@@ -78,7 +180,7 @@ def read_recipient(filepath : str) -> list[tuple[str, str]]:
         elif ext in [".xls", ".xlsx"]:
             df = pd.read_excel(filepath)
     except Exception as e:
-        print(f"{TRANSLATIONS['es']['Errors']['ReadingFile']}: {e}")
+        print(f"{ERROR_TEXT['ReadingFile']}: {e}")
         return []
     
     if RECIPIENT_EMAIL_COLUMN not in df.columns:
@@ -91,7 +193,7 @@ def read_recipient(filepath : str) -> list[tuple[str, str]]:
         email = row[RECIPIENT_EMAIL_COLUMN]
 
         if not re.match(EMAIL_REGEX_PATTERN, email):
-            print(f"{TRANSLATIONS['es']['Errors']['InvalidReceipientEmail']}: {email}")
+            print(f"{ERROR_TEXT['InvalidReceipientEmail']}: {email}")
             continue
 
         name = row[RECIPIENT_NAME_COLUMN] if has_name else ""
@@ -115,59 +217,17 @@ def generate_html_report(report : InformationData, query: str) -> str:
 
     tracking_html = "".join(f"<li>{p}</li>" for p in report.tracking_points)
 
-    return f"""
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8">
-      <style>
-        body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #f4f6fb; margin: 0; padding: 0; }}
-        .container {{ max-width: 720px; margin: 30px auto; background: #fff; border-radius: 16px;
-                      box-shadow: 0 4px 24px rgba(0,0,0,0.10); overflow: hidden; }}
-        .header {{ background: linear-gradient(135deg, #1a6b4a 0%, #0a3d62 100%);
-                   padding: 36px 40px 24px; color: #fff; }}
-        .header h1 {{ margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }}
-        .header p {{ margin: 8px 0 0; opacity: 0.85; font-size: 14px; }}
-        .badge {{ display: inline-block; background: rgba(255,255,255,0.20); border-radius: 20px;
-                  padding: 4px 14px; font-size: 12px; margin-top: 12px; }}
-        .summary-box {{ background: #eaf4ee; border-left: 4px solid #1a6b4a; margin: 28px 40px 0;
-                        padding: 16px 20px; border-radius: 8px; font-size: 15px; color: #1a6b4a; font-style: italic; }}
-        .content {{ padding: 24px 40px 10px; font-size: 15px; line-height: 1.7; color: #2d2d2d; }}
-        .content h1 {{ color: #0a3d62; font-size: 20px; border-bottom: 2px solid #e0e8f0; padding-bottom: 6px; }}
-        .content h2 {{ color: #1a6b4a; font-size: 17px; margin-top: 24px; }}
-        .content h3 {{ color: #0a3d62; font-size: 15px; }}
-        .content li {{ margin-bottom: 4px; }}
-        .followup {{ background: #f0f4fa; border-radius: 10px; margin: 20px 40px;
-                     padding: 18px 22px; }}
-        .followup h3 {{ margin: 0 0 10px; color: #0a3d62; font-size: 14px; text-transform: uppercase;
-                        letter-spacing: 1px; }}
-        .followup ul {{ margin: 0; padding-left: 18px; color: #444; font-size: 14px; }}
-        .footer {{ text-align: center; padding: 20px; font-size: 12px; color: #aaa;
-                   border-top: 1px solid #eee; }}
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>Informe de Investigación</h1>
-          <p>Tema: <strong>{query}</strong></p>
-          <span class="badge">Generado con IA · Sistema Multiagente</span>
-        </div>
-        <div class="summary-box">
-             {report.brief_summary}
-        </div>
-        <div class="content">
-          <p>{html_body}</p>
-        </div>
-        <div class="followup">
-          <h3>Puntos para seguir investigando</h3>
-          <ul>{tracking_html}</ul>
-        </div>
-        <div class="footer">Generado automáticamente por el Sistema de Investigación Multiagente</div>
-      </div>
-    </body>
-    </html>
-    """
+    return EMAIL_REPORT_TEXT["template"].format(
+        title=EMAIL_REPORT_TEXT["title"],
+        topic_label=EMAIL_REPORT_TEXT["topic_label"],
+        query=query,
+        badge=EMAIL_REPORT_TEXT["badge"],
+        brief_summary=report.brief_summary,
+        html_body=html_body,
+        tracking_title=EMAIL_REPORT_TEXT["tracking_title"],
+        tracking_html=tracking_html,
+        footer=EMAIL_REPORT_TEXT["footer"],
+    )
 
 def send_emails(recipients: list[tuple[str, str]], query: str, report : InformationData) -> str:
     load_dotenv()
@@ -176,10 +236,10 @@ def send_emails(recipients: list[tuple[str, str]], query: str, report : Informat
     password = os.getenv("EMAIL_PASSWORD")
 
     if not sender or not password:
-        return TRANSLATIONS["es"]["Errors"]["MissingEmailCredentials"]
+        return ERROR_TEXT["MissingEmailCredentials"]
     
     if not recipients:
-        return TRANSLATIONS["es"]["Errors"]["MissingRecipients"]
+        return ERROR_TEXT["MissingRecipients"]
     
     html_content = generate_html_report(report, query)
     log = []
@@ -190,25 +250,36 @@ def send_emails(recipients: list[tuple[str, str]], query: str, report : Informat
         server.login(sender, password)
 
         for name, email in recipients:
-            msg = MIMEText(html_content, "html")
-            msg["Subject"] = TRANSLATIONS["es"]["Email"]["subject"]
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = EMAIL_TEXT["subject"]
             msg["From"] = sender
             msg["To"] = email
 
-            msg.attach(MIMEText(TRANSLATIONS["es"]["Email"]["body"].format(name=name or "", query=query, report_summary=report.brief_summary), "plain"))
-            msg.attach(MIMEText(html_content, "html"))
+            plain_text = EMAIL_TEXT["body"].format(
+                name=name or "",
+                query=query,
+                report_summary=report.brief_summary,
+            )
+
+            msg.attach(MIMEText(plain_text, "plain", "utf-8"))
+            msg.attach(MIMEText(html_content, "html", "utf-8"))
 
             try:
                 server.sendmail(sender, email, msg.as_string())
-                log.append(TRANSLATIONS["es"]["Email"]["success"].format(email=email))
+                log.append(EMAIL_TEXT["success"].format(email=email))
             except Exception as e:
-                log.append(TRANSLATIONS["es"]["Email"]["failure"].format(email=email, error=e))
+                log.append(EMAIL_TEXT["failure"].format(email=email, error=e))
 
         server.quit()
     except smtplib.SMTPException as e:
-        return TRANSLATIONS["es"]["Errors"]["smtp_failure"].format(error=e)
+        return ERROR_TEXT["smtp_failure"].format(error=e)
     except Exception as e:
-        return TRANSLATIONS["es"]["Errors"]["general_failure"].format(error=e)
+        return ERROR_TEXT["general_failure"].format(error=e)
     
     return "\n".join(log)
 
+
+if __name__ == "__main__":
+    from gradio_UI import crear_interfaz
+    demo = crear_interfaz()
+    demo.launch()

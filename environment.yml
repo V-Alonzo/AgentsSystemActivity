@@ -1,8 +1,14 @@
 name: AgentsSystem
 channels:
-  - defaults
+  - conda-forge
 dependencies:
   - python=3.11
   - pandas
-  - conda-forge::openai-agents
-prefix: /opt/anaconda3/envs/AgentsSystem
+  - gradio
+  - python-dotenv
+  - pydantic
+  - openpyxl
+  - xlrd
+  - pip
+  - pip:
+      - openai-agents

@@ -2,3 +2,4 @@
 __pycache__/
 destinatarios.csv
 secret/*.pem
+*.mov

@@ -282,4 +282,4 @@ def send_emails(recipients: list[tuple[str, str]], query: str, report : Informat
 if __name__ == "__main__":
     from gradio_UI import crear_interfaz
     demo = crear_interfaz()
-    demo.launch()
+    demo.launch(share=True)

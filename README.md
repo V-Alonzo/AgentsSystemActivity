@@ -1,112 +1,201 @@
-# Actividad de Sistema de Agentes
+# Sistema Multiagente de Investigacion
 
-Proyecto académico enfocado en la construcción de un sistema multiagente para automatizar tareas de investigación web, síntesis de información y distribución de resultados por correo electrónico.
+Proyecto academico en Python para investigar un tema con agentes, sintetizar resultados en un reporte y, opcionalmente, distribuirlo por correo electronico desde una interfaz web hecha con Gradio.
 
-## Descripción del proyecto
+## Que hace actualmente
 
-Este proyecto implementa un flujo de investigación asistido por agentes en Python. A partir de una consulta, el sistema genera un plan de búsquedas, ejecuta investigaciones en la web, consolida los hallazgos en un reporte estructurado y, de forma opcional, prepara el envío del resultado por correo a una lista de destinatarios.
+El sistema implementa un flujo completo de investigacion asistida:
 
-La lógica principal está concentrada en un único módulo que coordina agentes especializados, configuraciones de negocio, traducciones y lectura de destinatarios desde archivos tabulares.
+1. Recibe un tema desde la interfaz.
+2. Genera un plan de busquedas web con un agente planificador.
+3. Ejecuta las busquedas de forma concurrente con un agente que usa herramienta de web search.
+4. Redacta un reporte estructurado en Markdown y un resumen breve.
+5. Genera puntos de seguimiento para continuar la investigacion.
+6. Permite cargar un archivo de destinatarios y previsualizar los correos validos.
+7. Si el usuario lo activa, convierte el reporte a HTML y lo envia por SMTP.
 
-## Objetivo del proyecto
+## Funcionalidades vigentes
 
-Desarrollar una solución que demuestre cómo un enfoque multiagente puede dividir una tarea compleja de investigación en etapas especializadas para:
+- Planificacion automatica de consultas de investigacion.
+- Ejecucion asincrona de multiples busquedas en paralelo.
+- Generacion de resumen ejecutivo.
+- Generacion de informe largo en Markdown.
+- Generacion de puntos sugeridos para seguimiento.
+- Visualizacion del estado del proceso paso a paso en la UI.
+- Previsualizacion de destinatarios antes del envio.
+- Lectura de destinatarios desde archivos `.csv`, `.xls` y `.xlsx` en la capa de backend.
+- Validacion basica de correos electronicos mediante expresion regular.
+- Conversion del informe Markdown a una plantilla HTML para correo.
+- Envio de correos usando SMTP con TLS.
+- Interfaz web con Gradio para ejecutar todo el flujo sin usar una CLI propia.
 
-- planear búsquedas relevantes;
-- recopilar información desde la web;
-- redactar un informe coherente y detallado;
-- facilitar la distribución automática del reporte a varios destinatarios.
+## Flujo del sistema
 
-## Funcionalidades principales
+```text
+Tema -> Plan de busquedas -> Busquedas web concurrentes -> Reporte y resumen -> HTML para correo -> Envio opcional
+```
 
-- Generación de un plan de investigación con un número configurable de búsquedas.
-- Ejecución asíncrona de búsquedas web usando un agente con herramienta de búsqueda integrada.
-- Síntesis de resultados en un resumen breve y un reporte completo en formato Markdown.
-- Generación de puntos de seguimiento para ampliar la investigación posterior.
-- Conversión del reporte a una plantilla HTML lista para enviarse por correo.
-- Lectura de destinatarios desde archivos `.csv`, `.xls` o `.xlsx`.
-- Validación básica de correos electrónicos antes del envío.
-- Envío de reportes por SMTP usando credenciales definidas en variables de entorno.
-- Centralización de mensajes y textos del sistema en español mediante un archivo de traducciones.
+## Arquitectura
 
-## Arquitectura general
+El proyecto se apoya en tres agentes y una capa de orquestacion:
 
-El sistema está organizado alrededor de tres agentes y un conjunto de funciones de orquestación:
+### 1. Agente planificador
 
-1. **Agente planificador**
-   Recibe la consulta del usuario y propone varias búsquedas relevantes para responder mejor al tema.
+Genera un conjunto de busquedas relevantes a partir de la consulta del usuario. El numero actual de busquedas configuradas es `3`.
 
-2. **Agente de búsqueda**
-   Ejecuta cada búsqueda en la web y devuelve resúmenes concisos de los resultados encontrados.
+### 2. Agente de busqueda
 
-3. **Agente redactor**
-   Toma la consulta original junto con los resultados recuperados y genera un informe final estructurado.
+Ejecuta cada consulta usando `WebSearchTool` y devuelve un resumen breve por busqueda.
 
-4. **Capa de orquestación**
-   Coordina el flujo asíncrono: planificación, búsquedas concurrentes, redacción, formateo HTML y envío por correo.
+### 3. Agente redactor
 
-5. **Capa de configuración y soporte**
-   Incluye constantes de configuración, traducciones y utilidades para lectura de destinatarios.
+Recibe la consulta original junto con los resultados recopilados y devuelve:
 
-### Flujo general
+- `brief_summary`
+- `markdown_report`
+- `tracking_points`
 
-`Consulta -> Plan de búsquedas -> Búsquedas web -> Síntesis del reporte -> Conversión a HTML -> Envío por correo`
+### 4. Orquestacion
 
-## Requisitos técnicos
+La funcion `perform_investigation()` coordina el flujo completo, actualiza el progreso que ve el usuario y dispara el envio de correos cuando corresponde.
 
-### Software base
+## Interfaz disponible
 
-- Python 3.10 o superior.
-- Acceso a internet para la investigación web.
-- Cuenta de correo SMTP compatible con TLS, actualmente configurada para Gmail.
+La aplicacion expone una interfaz Gradio con:
 
-### Dependencias principales
+- Campo para ingresar el tema a investigar.
+- Carga de archivo de destinatarios.
+- Previsualizacion de destinatarios validos.
+- Casilla para activar o desactivar el envio por correo.
+- Pestañas para ver estado, informe completo, resumen ejecutivo y resultado del envio.
 
-- `pandas`
+El punto de entrada real del proyecto está en `investigate.py` que importa y lanza la interfaz definida en `gradio_UI.py`.
+
+## Requisitos
+
+- Python 3.11 recomendado por `environment.yml`.
+- Conexion a internet.
+- Credenciales para el proveedor o modelo usado por `openai-agents`.
+- Cuenta SMTP valida si se desea enviar correos.
+
+## Dependencias actuales
+
+El proyecto utiliza estas dependencias principales definidas en `environment.yml`:
+
 - `gradio`
-- `python-dotenv`
+- `openai-agents`
+- `pandas`
 - `pydantic`
-- SDK de agentes usado por `from agents import Agent, WebSearchTool, Runner, trace`
+- `python-dotenv`
+- `openpyxl`
+- `xlrd`
 
-### Variables de entorno
+## Instalacion
 
-El archivo de ejemplo `example.env` define las credenciales mínimas para el envío de correos:
+### Conda
 
-- `EMAIL_SENDER`
-- `EMAIL_PASSWORD`
+```bash
+conda env create -f environment.yml
+conda activate AgentsSystem
+```
 
-Además, para ejecutar los agentes y el acceso al modelo, también deben configurarse las credenciales requeridas por el SDK utilizado en el proyecto.
+## Variables de entorno
 
-### Configuración relevante
+Se esperan las siguientes variables de entorno para el envío de correos.
 
-En `settings.py` se definen parámetros como:
+```env
+EMAIL_SENDER=tu_correo@example.com
+EMAIL_PASSWORD=tu_app_password
+```
 
-- número de búsquedas a ejecutar;
-- modelo del agente redactor;
-- nombres de columnas para destinatarios;
-- patrón de validación de correo;
-- servidor y puerto SMTP.
+Deben colocarse en un archivo `.env` en la raiz del proyecto.
 
-## Estructura relevante del proyecto
+Para ejecutar los agentes, se deben configurar las credenciales adicionales que requiere el SDK `openai-agents` en el entorno local.
+
+## Ejecucion
+
+Ejecuta:
+
+```bash
+python investigate.py
+```
+
+Actualmente, el script:
+
+- crea la interfaz Gradio;
+- la lanza con `share=True`;
+- muestra una URL local y otra compartida cuando Gradio la habilita.
+
+## Uso basico
+
+1. Ejecuta la aplicacion.
+2. Escribe un tema o pregunta de investigacion.
+3. Opcionalmente, sube un archivo de destinatarios.
+4. Activa la casilla de envio si se desea mandar el reporte por correo.
+5. Inicia la investigacion.
+6. Revisa las pestanas de estado, reporte, resumen y correos.
+
+## Formato de destinatarios
+
+La logica de lectura busca estas columnas:
+
+- `Nombre`
+- `Correo`
+
+Ejemplo CSV:
+
+```csv
+Nombre,Correo
+Ana Perez,ana@example.com
+Luis Gomez,luis@example.com
+```
+
+Detalles importantes:
+
+- Si falta la columna `Correo`, el archivo se descarta.
+- La columna `Nombre` es opcional.
+- El backend puede leer `.csv`, `.xls` y `.xlsx`.
+- La interfaz Gradio solo permite seleccionar `.csv` y `.xlsx` desde el cargador de archivos.
+
+## Configuracion tecnica actual
+
+Los parametros centrales viven en `settings.py`:
+
+- `SEARCHES_NUMBER = 3`
+- `WRITER_AGENT_MODEL = "gpt-4o-mini"`
+- `RECIPIENT_NAME_COLUMN = "Nombre"`
+- `RECIPIENT_EMAIL_COLUMN = "Correo"`
+- `EMAIL_SERVER = "smtp.gmail.com"`
+- `EMAIL_SERVER_PORT = 587`
+
+## Estructura del proyecto
 
 ```text
 AgentsSystem/
-├── investigate.py      # Lógica principal del sistema multiagente
-├── settings.py         # Constantes de configuración técnica y operativa
-├── strings.py          # Textos e instrucciones en español para los agentes
-├── destinatarios.csv   # Ejemplo de archivo con destinatarios
-├── example.env         # Ejemplo de variables de entorno para correo
-└── README.md           # Documentación del proyecto
+├── investigate.py
+├── gradio_UI.py
+├── settings.py
+├── strings.py
+├── environment.yml
+├── example.env
+├── destinatarios.csv
+└── README.md
 ```
 
-### Descripción de archivos clave
+### Archivos principales
 
-- `investigate.py`: define los modelos de datos, los agentes, las funciones asíncronas de búsqueda y redacción, la lectura de destinatarios y el envío de correos.
-- `settings.py`: concentra la configuración del flujo, el modelo y los parámetros del envío.
-- `strings.py`: contiene las instrucciones de los agentes y los mensajes del sistema en español.
-- `destinatarios.csv`: archivo de ejemplo para pruebas de distribución del reporte.
-- `example.env`: plantilla de configuración para las credenciales de correo.
+- `investigate.py`: modelos, agentes, orquestacion, lectura de destinatarios, generacion HTML y envio SMTP.
+- `gradio_UI.py`: construccion de la interfaz y enlaces entre componentes de UI y backend.
+- `settings.py`: configuracion operativa del sistema.
+- `strings.py`: textos de UI, agentes, logs y plantilla HTML del correo.
+- `environment.yml`: entorno recomendado del proyecto.
+- `destinatarios.csv`: ejemplo simple de destinatarios.
 
-## Valor académico del proyecto
+## Salidas del sistema
 
-Esta actividad demuestra cómo un sistema de agentes puede distribuir responsabilidades entre planificación, recuperación de información y generación de contenido, manteniendo una separación clara entre configuración, lógica de negocio y salida final.
+Cuando la ejecucion finaliza, la interfaz puede mostrar:
+
+- bitacora del proceso;
+- informe completo en Markdown;
+- resumen ejecutivo;
+- estado del envio de correos.

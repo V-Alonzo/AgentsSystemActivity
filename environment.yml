@@ -3,12 +3,12 @@ channels:
   - conda-forge
 dependencies:
   - python=3.11
-  - pandas
-  - gradio
-  - python-dotenv
-  - pydantic
-  - openpyxl
-  - xlrd
   - pip
   - pip:
+      - pandas
+      - gradio
+      - python-dotenv
+      - pydantic
+      - openpyxl
+      - xlrd
       - openai-agents
